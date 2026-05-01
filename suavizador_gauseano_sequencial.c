@@ -86,9 +86,7 @@ double** convolucao(int largura, int altura, double **imagem_preenchida, double 
     }
 }
 
-/*consta esse erro na função abaixo mas não interfere no código*/
-
-double** suavizador_gaussiano( int largura, int altura, double imagem[altura][largura]){
+double** suavizador_gaussiano( int largura, int altura, double **imagem){
     double kernel[TAMANHO][TAMANHO];
     monta_kernel(kernel);
 
@@ -112,23 +110,64 @@ double** suavizador_gaussiano( int largura, int altura, double imagem[altura][la
     return imagem_atual;
 }   
 
-int main(void) {
-    // matriz de exemplo 5x5
-    double imagem_estatica[5][5] = {
-        {1.0, 2.0, 3.0, 2.0, 1.0},
-        {2.0, 4.0, 6.0, 4.0, 2.0},
-        {3.0, 6.0, 9.0, 6.0, 3.0},
-        {2.0, 4.0, 6.0, 4.0, 2.0},
-        {1.0, 2.0, 3.0, 2.0, 1.0}
-    };
+double** ler_pgm(const char *nome_arquivo, int *largura, int *altura) {
+    FILE *arquivo = fopen(nome_arquivo, "r");
+    if (!arquivo) {
+        printf("Erro ao abrir a imagem: %s\n", nome_arquivo);
+        exit(1);
+    }
 
-    int altura = 5;
-    int largura = 5;
+    char formato[3];
+    int max_val;
+    fscanf(arquivo, "%s", formato);
+    fscanf(arquivo, "%d %d", largura, altura);
+    fscanf(arquivo, "%d", &max_val);
+
+    double **imagem = (double **)malloc(*altura * sizeof(double *));
+    for (int i = 0; i < *altura; i++) {
+        imagem[i] = (double *)malloc(*largura * sizeof(double));
+        for (int j = 0; j < *largura; j++) {
+            int pixel;
+            fscanf(arquivo, "%d", &pixel);
+            imagem[i][j] = (double)pixel; // Converte de 0-255 para double
+        }
+    }
+    fclose(arquivo);
+    return imagem;
+}
+
+void salvar_pgm(const char *nome_arquivo, int largura, int altura, double **imagem) {
+    FILE *arquivo = fopen(nome_arquivo, "w");
+    if (!arquivo) {
+        printf("Erro ao salvar a imagem: %s\n", nome_arquivo);
+        exit(1);
+    }
+
+    fprintf(arquivo, "P2\n%d %d\n255\n", largura, altura);
+
+    for (int i = 0; i < altura; i++) {
+        for (int j = 0; j < largura; j++) {
+            int pixel = (int)imagem[i][j]; // Volta para inteiro
+            if (pixel > 255) pixel = 255;  // Garante os limites da imagem
+            if (pixel < 0) pixel = 0;
+            fprintf(arquivo, "%d ", pixel);
+        }
+        fprintf(arquivo, "\n");
+    }
+    fclose(arquivo);
+}
+
+int main(void) {
+    
+       int largura, altura;
+    
+
+    double **imagem = ler_pgm("entrada.pgm", &largura, &altura);
 
     // incio da medição de tempo
     clock_t start = clock(); 
 
-    double **resultado = suavizador_gaussiano(largura, altura, imagem_estatica);
+    double **resultado = suavizador_gaussiano(largura, altura, imagem);
 
     clock_t end = clock();
     // fim da medição de tempo
