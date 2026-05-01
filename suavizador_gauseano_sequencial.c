@@ -4,7 +4,7 @@
 #include <time.h>
 
 #define SIGMA 1.0
-#define INTERACOES 3
+#define INTERACOES 20
 #define TAMANHO 3
 
 /*faz a montagem do kernel a ser utilizado*/
@@ -170,18 +170,12 @@ int main(void) {
     double **resultado = suavizador_gaussiano(largura, altura, imagem);
 
     clock_t end = clock();
-    // fim da medição de tempo
+    // fim da medição de tempo=
 
     // Cálculo do tempo em segundos (double)
     double tempo_segundos = (double)(end - start) / CLOCKS_PER_SEC;
 
-    printf("--- Matriz Suavizada em Sequencia ---\n");
-    for(int i = 0; i < altura; i++) {
-        for(int j = 0; j < largura; j++) {
-            printf("%.6f ", resultado[i][j]);
-        }
-        printf("\n");
-    }
+    salvar_pgm("saida.pgm", largura, altura, resultado);
 
     printf("\nTempo de execucao (Serial): %f segundos\n", tempo_segundos);
 
