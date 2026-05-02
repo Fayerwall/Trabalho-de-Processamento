@@ -6,6 +6,36 @@ export OMP_NUM_THREADS=4
 ./paralelo
 
 
+Tempo de execucao (Paralelo): 0.051767 segundos com 4 threads
+Tempo de execucao (Paralelo): 0.062654 segundos com 3 threads
+Tempo de execucao (Paralelo): 0.089315 segundos com 2 threads
+
+usando vetor:
+Tempo de execucao (Paralelo Otimizado): 0.011624 segundos com 4 threads
+Tempo de execucao (Paralelo Otimizado): 0.092672 segundos com 2
+Tempo de execucao (Serial): 0.133401 segundos
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 --- Matriz Suavizada em Sequencia ---
 2.549978 2.998259 3.275312 2.998259 2.549978 

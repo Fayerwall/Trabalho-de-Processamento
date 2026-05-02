@@ -1,28 +1,60 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <omp.h> // Inclusão da biblioteca OpenMP
+#include <omp.h>
 
 #define SIGMA 1.0
-#define INTERACOES 3
+#define INTERACOES 20
 #define TAMANHO 3
+
+// Aloca um bloco contíguo de memória para a matriz (melhora o cache e o acesso aos pixels)
+double** alocar_matriz(int altura, int largura) {
+    double **matriz = (double **)malloc(altura * sizeof(double *));
+    double *dados = (double *)malloc(altura * largura * sizeof(double));
+    for (int i = 0; i < altura; i++) {
+        matriz[i] = &dados[i * largura];
+    }
+    return matriz;
+}
+
+// Libera a matriz contígua de forma segura
+void liberar_matriz(double **matriz) {
+    if (matriz != NULL) {
+        if (matriz[0] != NULL) {
+            free(matriz[0]); // Libera o bloco de dados
+        }
+        free(matriz); // Libera o vetor de ponteiros
+    }
+}
 
 void monta_kernel(double kernel[TAMANHO][TAMANHO]){
     int i, j;
-    int ax[TAMANHO];
-    double sum = 0.0;
+    int ax[TAMANHO], xx[TAMANHO][TAMANHO], yy[TAMANHO][TAMANHO];
 
-    for(i = 0; i < TAMANHO; i++) ax[i] = (-1 * (TAMANHO / 2) + i);
+    for(i = 0; i < TAMANHO; i++){
+        ax[i] = (-1 * (TAMANHO / 2) + i);
+    }
 
     for(i = 0; i < TAMANHO; i++){
         for(j = 0; j < TAMANHO; j++){
-            kernel[i][j] = exp(-1 * (pow(ax[j], 2.0) + pow(ax[i], 2.0)) / (2 * pow(SIGMA, 2.0)));
+            xx[i][j] = ax[j];
+            yy[i][j] = ax[i];
+        }
+    }
+
+    double sum = 0.0;
+
+    for(i = 0; i < TAMANHO; i++){
+        for(j = 0; j < TAMANHO; j++){
+            kernel[i][j] = exp(-1 * (pow(xx[i][j], 2.0) + pow(yy[i][j], 2.0)) / (2 * pow(SIGMA, 2.0)));
             sum += kernel[i][j];
         }
     }
 
     for(i = 0; i < TAMANHO; i++){
-        for(j = 0; j < TAMANHO; j++) kernel[i][j] /= sum;
+        for(j = 0; j < TAMANHO; j++){
+            kernel[i][j] /= sum;
+        }
     }
 }
 
@@ -31,11 +63,8 @@ double** padding(int largura, int altura, double **imagem){
     int n_largura = largura + 2 * p;
     int n_altura = altura + 2 * p;
 
-    double **imagem_preenchida = (double **)malloc(n_altura * sizeof(double *));
-    for(int i = 0; i < n_altura; i++) 
-        imagem_preenchida[i] = (double *)malloc(n_largura * sizeof(double));
+    double **imagem_preenchida = alocar_matriz(n_altura, n_largura);
 
-    // Paralelização do loop externo de preenchimento
     #pragma omp parallel for collapse(2) schedule(static)
     for(int i = 0; i < n_altura; i++){
         for(int j = 0; j < n_largura; j++){
@@ -50,15 +79,15 @@ double** padding(int largura, int altura, double **imagem){
             imagem_preenchida[i][j] = imagem[ori_i][ori_j];
         }
     }
+
     return imagem_preenchida;
 }
 
-void convolucao(int largura, int altura, double **imagem_preenchida, double kernel[TAMANHO][TAMANHO], double **saida){
-    // Paralelização do loop externo. 'soma' deve ser privada para cada thread.
+double** convolucao(int largura, int altura, double **imagem_preenchida, double kernel[TAMANHO][TAMANHO], double **saida){
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < altura; i++) {
         for (int j = 0; j < largura; j++) {
-            double soma = 0.0; // Variável declarada dentro do loop paralelo é privada por padrão
+            double soma = 0.0;
             for (int ki = 0; ki < TAMANHO; ki++) {
                 for (int kj = 0; kj < TAMANHO; kj++) {
                     soma += imagem_preenchida[i + ki][j + kj] * kernel[ki][kj];
@@ -67,56 +96,129 @@ void convolucao(int largura, int altura, double **imagem_preenchida, double kern
             saida[i][j] = soma;
         }
     }
+    return saida;
 }
 
 double** suavizador_gaussiano(int largura, int altura, double **imagem){
     double kernel[TAMANHO][TAMANHO];
     monta_kernel(kernel);
 
-    double **imagem_atual = (double **)malloc(altura * sizeof(double *));
+    // Aloque a imagem atual de forma contígua e copie os dados
+    double **imagem_atual = alocar_matriz(altura, largura);
+    #pragma omp parallel for collapse(2)
     for (int i = 0; i < altura; i++) {
-        imagem_atual[i] = (double *)malloc(largura * sizeof(double));
-        #pragma omp parallel for
-        for (int j = 0; j < largura; j++) imagem_atual[i][j] = imagem[i][j];
+        for (int j = 0; j < largura; j++) {
+            imagem_atual[i][j] = imagem[i][j];
+        }
     }
+
+    // Alocação de buffer auxiliar fora da iteração
+    double **imagem_saida = alocar_matriz(altura, largura);
 
     for (int it = 0; it < INTERACOES; it++) {
         double **com_pad = padding(largura, altura, imagem_atual);
-        convolucao(largura, altura, com_pad, kernel, imagem_atual);
 
-        for (int i = 0; i < (altura + (TAMANHO/2)*2); i++) free(com_pad[i]);
-        free(com_pad);
+        convolucao(largura, altura, com_pad, kernel, imagem_saida);
+
+        // Swap (troca de ponteiros para evitar re-alocações)
+        double **temp = imagem_atual;
+        imagem_atual = imagem_saida;
+        imagem_saida = temp;
+
+        liberar_matriz(com_pad); // Libera o padding, mas mantém os dados processados
     }
+
+    liberar_matriz(imagem_saida); // Libera o ponteiro do buffer auxiliar restante
     return imagem_atual;
+} 
+
+double** ler_pgm(const char *nome_arquivo, int *largura, int *altura) {
+    FILE *arquivo = fopen(nome_arquivo, "r");
+    if (!arquivo) {
+        printf("Erro ao abrir a imagem: %s\n", nome_arquivo);
+        exit(1);
+    }
+
+    char formato[3];
+    int max_val;
+
+    // Verificamos o retorno de cada fscanf para evitar o warning e tratar possíveis erros de leitura
+    if (fscanf(arquivo, "%s", formato) != 1) {
+        printf("Erro ao ler o formato da imagem.\n");
+        fclose(arquivo);
+        exit(1);
+    }
+    
+    if (fscanf(arquivo, "%d %d", largura, altura) != 2) {
+        printf("Erro ao ler as dimensoes da imagem.\n");
+        fclose(arquivo);
+        exit(1);
+    }
+    
+    if (fscanf(arquivo, "%d", &max_val) != 1) {
+        printf("Erro ao ler o valor maximo de tom de cinza.\n");
+        fclose(arquivo);
+        exit(1);
+    }
+
+    double **imagem = alocar_matriz(*altura, *largura);
+    for (int i = 0; i < *altura; i++) {
+        for (int j = 0; j < *largura; j++) {
+            int pixel;
+            if (fscanf(arquivo, "%d", &pixel) != 1) {
+                printf("Erro ao ler os pixels da imagem.\n");
+                // Libera a matriz antes de sair
+                for(int k=0; k<i; k++) free(imagem[k]);
+                free(imagem);
+                fclose(arquivo);
+                exit(1);
+            }
+            imagem[i][j] = (double)pixel;
+        }
+    }
+    fclose(arquivo);
+    return imagem;
 }
 
-int main(void){
-    // Exemplo de matriz 5x5 conforme o benchmark
-    int altura = 5, largura = 5;
-    double **imagem = (double **)malloc(altura * sizeof(double *));
-    for(int i=0; i<altura; i++) imagem[i] = (double *)malloc(largura * sizeof(double));
-    
-    double dados[5][5] = {
-        {1, 2, 3, 2, 1},
-        {2, 4, 6, 4, 2},
-        {3, 6, 9, 6, 3},
-        {2, 4, 6, 4, 2},
-        {1, 2, 3, 2, 1}
-    };
-    for(int i=0; i<5; i++) for(int j=0; j<5; j++) imagem[i][j] = dados[i][j];
-
-    printf("Rodando Suavizador com %s threads...\n", getenv("OMP_NUM_THREADS") ? getenv("OMP_NUM_THREADS") : "padrao");
-
-    double inicio = omp_get_wtime();
-    double **resultado = suavizador_gaussiano(largura, altura, imagem);
-    double fim = omp_get_wtime();
-
-    printf("\n--- Matriz Suavizada em Paralelo ---\n");
-    for(int i = 0; i < altura; i++){
-        for(int j = 0; j < largura; j++) printf("%.6f ", resultado[i][j]);
-        printf("\n");
+void salvar_pgm(const char *nome_arquivo, int largura, int altura, double **imagem) {
+    FILE *arquivo = fopen(nome_arquivo, "w");
+    if (!arquivo) {
+        printf("Erro ao salvar a imagem: %s\n", nome_arquivo);
+        exit(1);
     }
 
-    printf("\nTempo de execucao (paralelo): %f segundos\n", fim - inicio);
+    fprintf(arquivo, "P2\n%d %d\n255\n", largura, altura);
+
+    for (int i = 0; i < altura; i++) {
+        for (int j = 0; j < largura; j++) {
+            int pixel = (int)imagem[i][j];
+            if (pixel > 255) pixel = 255;
+            if (pixel < 0) pixel = 0;
+            fprintf(arquivo, "%d ", pixel);
+        }
+        fprintf(arquivo, "\n");
+    }
+    fclose(arquivo);
+}
+
+int main(void) {
+    int largura, altura;
+
+    double **imagem = ler_pgm("entrada.pgm", &largura, &altura);
+
+    double inicio = omp_get_wtime();
+
+    double **resultado = suavizador_gaussiano(largura, altura, imagem);
+
+    double fim = omp_get_wtime();
+
+    salvar_pgm("saida.pgm", largura, altura, resultado);
+
+    printf("\nTempo de execucao (Paralelo Otimizado): %f segundos\n", fim - inicio);
+
+    // Liberação da memória
+    liberar_matriz(imagem);
+    liberar_matriz(resultado);
+
     return 0;
 }
