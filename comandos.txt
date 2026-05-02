@@ -1,22 +1,33 @@
 gcc suavizador_gauseano_sequencial.c -o serial -lm
+gcc suavizador_serial_otimizado.c -o serial_otimizado -O3 -lm
 
-gcc suavizador_gauseano_paralelo.c -o paralelo -fopenmp -lm
+gcc suavizador_gauseano_paralelo.c -o paralelo -fopenmp -O3 -lm
 
 export OMP_NUM_THREADS=4
 ./paralelo
 
-
+usando matriz
 Tempo de execucao (Paralelo): 0.051767 segundos com 4 threads
 Tempo de execucao (Paralelo): 0.062654 segundos com 3 threads
 Tempo de execucao (Paralelo): 0.089315 segundos com 2 threads
 
+imagem2
 usando vetor:
 Tempo de execucao (Paralelo Otimizado): 0.011624 segundos com 4 threads
-Tempo de execucao (Paralelo Otimizado): 0.092672 segundos com 2
+Tempo de execucao (Paralelo Otimizado): 0.029919 segundos com 3 threads
+Tempo de execucao (Paralelo Otimizado): 0.092672 segundos com 2 threads
+
+
 Tempo de execucao (Serial): 0.133401 segundos
 
 
 
+
+Nome do dispositivo	DeyvidReis
+Processador	Intel(R) Core(TM) i5-1035G1 CPU @ 1.00GHz (1.19 GHz)
+RAM intalada 8,00 GB (utilizável: 7,77 GB)
+
+Tipo de sistema	Sistema operacional de 64 bits, processador baseado em x64
 
 
 

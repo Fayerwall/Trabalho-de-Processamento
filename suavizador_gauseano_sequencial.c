@@ -7,29 +7,47 @@
 #define INTERACOES 20
 #define TAMANHO 3
 
+// Aloca um bloco contíguo de memória para a matriz (melhora o cache)
+double** alocar_matriz(int altura, int largura) {
+    double **matriz = (double **)malloc(altura * sizeof(double *));
+    double *dados = (double *)malloc(altura * largura * sizeof(double));
+    for (int i = 0; i < altura; i++) {
+        matriz[i] = &dados[i * largura];
+    }
+    return matriz;
+}
+
+// Libera a matriz contígua de forma segura
+void liberar_matriz(double **matriz) {
+    if (matriz != NULL) {
+        if (matriz[0] != NULL) {
+            free(matriz[0]); // Libera o bloco de dados
+        }
+        free(matriz); // Libera o vetor de ponteiros
+    }
+}
+
 /*faz a montagem do kernel a ser utilizado*/
-
 void monta_kernel(double kernel[TAMANHO][TAMANHO]){
-    int i,j;
-    int ax[TAMANHO], xx[TAMANHO][TAMANHO],yy[TAMANHO][TAMANHO];
+    int i, j;
+    int ax[TAMANHO], xx[TAMANHO][TAMANHO], yy[TAMANHO][TAMANHO];
 
-
-    for( i=0;i<TAMANHO;i++){
+    for(i = 0; i < TAMANHO; i++){
         ax[i] = (-1 * (TAMANHO / 2) + i);
     }
 
-    for( i=0; i < TAMANHO; i++){
-        for( j=0; j < TAMANHO; j++){
+    for(i = 0; i < TAMANHO; i++){
+        for(j = 0; j < TAMANHO; j++){
             xx[i][j] = ax[j];
             yy[i][j] = ax[i];
         }
     }
 
-    double sum = 0;
+    double sum = 0.0;
 
-    for( i=0; i <TAMANHO; i++){
-        for( j=0; j < TAMANHO; j++){
-            kernel[i][j] = exp( -1 *(pow(xx[i][j],2.0) + pow(yy[i][j],2.0))  / (2 * pow(SIGMA,2.0)));
+    for(i = 0; i < TAMANHO; i++){
+        for(j = 0; j < TAMANHO; j++){
+            kernel[i][j] = exp(-1 * (pow(xx[i][j], 2.0) + pow(yy[i][j], 2.0)) / (2 * pow(SIGMA, 2.0)));
             sum += kernel[i][j];
         }
     }
@@ -42,18 +60,14 @@ void monta_kernel(double kernel[TAMANHO][TAMANHO]){
 }
 
 /*faz o processo do aumento da borda da imagem original*/
-
 double** padding(int largura, int altura, double **imagem){
-
     int p = TAMANHO / 2;
     int n_largura = largura + 2 * p;
     int n_altura = altura + 2 * p;
 
-    double **imagem_preenchida = (double **)malloc(n_altura * sizeof(double *));
+    double **imagem_preenchida = alocar_matriz(n_altura, n_largura);
 
     for(int i = 0; i < n_altura; i++){
-        imagem_preenchida[i] = (double *)malloc(n_largura * sizeof(double));
-
         for(int j = 0; j < n_largura; j++){
             int ori_i = i - p;
             int ori_j = j - p;
@@ -64,15 +78,13 @@ double** padding(int largura, int altura, double **imagem){
             if (ori_j >= largura) ori_j = largura - 1;
 
             imagem_preenchida[i][j] = imagem[ori_i][ori_j];
-            }
         }
+    }
     return imagem_preenchida;
 }
 
 /*realiza a operação de convolução e alteração do pixel da imagem*/
-
 double** convolucao(int largura, int altura, double **imagem_preenchida, double kernel[TAMANHO][TAMANHO], double **saida){
-    
     for (int i = 0; i < altura; i++) {
         for (int j = 0; j < largura; j++) {
             double soma = 0.0;
@@ -84,31 +96,40 @@ double** convolucao(int largura, int altura, double **imagem_preenchida, double 
             saida[i][j] = soma;
         }
     }
+    return saida;
 }
 
-double** suavizador_gaussiano( int largura, int altura, double **imagem){
+double** suavizador_gaussiano(int largura, int altura, double **imagem){
     double kernel[TAMANHO][TAMANHO];
     monta_kernel(kernel);
 
-    double **imagem_atual = (double **)malloc(altura * sizeof(double *));
+    // Alocação contígua da imagem atual
+    double **imagem_atual = alocar_matriz(altura, largura);
     for (int i = 0; i < altura; i++) {
-        imagem_atual[i] = (double *)malloc(largura * sizeof(double));
-        for (int j = 0; j < largura; j++) imagem_atual[i][j] = imagem[i][j];
+        for (int j = 0; j < largura; j++) {
+            imagem_atual[i][j] = imagem[i][j];
+        }
     }
 
-    int contador = 0;
-    for (int it = 0; it < INTERACOES; it++) {
+    // Alocação da matriz de saída fora do loop
+    double **imagem_saida = alocar_matriz(altura, largura);
 
+    for (int it = 0; it < INTERACOES; it++) {
         double **com_pad = padding(largura, altura, imagem_atual);
 
-        convolucao(largura, altura, com_pad, kernel, imagem_atual);
+        convolucao(largura, altura, com_pad, kernel, imagem_saida);
 
-        for (int i = 0; i < (altura + (TAMANHO/2)*2); i++) free(com_pad[i]);
-        free(com_pad);
-        
+        // Swap (troca de ponteiros para evitar re-alocações na memória)
+        double **temp = imagem_atual;
+        imagem_atual = imagem_saida;
+        imagem_saida = temp;
+
+        liberar_matriz(com_pad);
     }
+
+    liberar_matriz(imagem_saida);
     return imagem_atual;
-}   
+} 
 
 double** ler_pgm(const char *nome_arquivo, int *largura, int *altura) {
     FILE *arquivo = fopen(nome_arquivo, "r");
@@ -119,17 +140,26 @@ double** ler_pgm(const char *nome_arquivo, int *largura, int *altura) {
 
     char formato[3];
     int max_val;
-    fscanf(arquivo, "%s", formato);
-    fscanf(arquivo, "%d %d", largura, altura);
-    fscanf(arquivo, "%d", &max_val);
+    if (fscanf(arquivo, "%s", formato) != 1 || 
+        fscanf(arquivo, "%d %d", largura, altura) != 2 || 
+        fscanf(arquivo, "%d", &max_val) != 1) {
+        
+        printf("Erro ao ler cabecalho da imagem.\n");
+        fclose(arquivo);
+        exit(1);
+    }
 
-    double **imagem = (double **)malloc(*altura * sizeof(double *));
+    double **imagem = alocar_matriz(*altura, *largura);
     for (int i = 0; i < *altura; i++) {
-        imagem[i] = (double *)malloc(*largura * sizeof(double));
         for (int j = 0; j < *largura; j++) {
             int pixel;
-            fscanf(arquivo, "%d", &pixel);
-            imagem[i][j] = (double)pixel; // Converte de 0-255 para double
+            if (fscanf(arquivo, "%d", &pixel) != 1) {
+                printf("Erro ao ler pixels.\n");
+                liberar_matriz(imagem);
+                fclose(arquivo);
+                exit(1);
+            }
+            imagem[i][j] = (double)pixel;
         }
     }
     fclose(arquivo);
@@ -147,8 +177,8 @@ void salvar_pgm(const char *nome_arquivo, int largura, int altura, double **imag
 
     for (int i = 0; i < altura; i++) {
         for (int j = 0; j < largura; j++) {
-            int pixel = (int)imagem[i][j]; // Volta para inteiro
-            if (pixel > 255) pixel = 255;  // Garante os limites da imagem
+            int pixel = (int)imagem[i][j];
+            if (pixel > 255) pixel = 255;
             if (pixel < 0) pixel = 0;
             fprintf(arquivo, "%d ", pixel);
         }
@@ -158,32 +188,25 @@ void salvar_pgm(const char *nome_arquivo, int largura, int altura, double **imag
 }
 
 int main(void) {
-    
-       int largura, altura;
-    
+    int largura, altura;
 
     double **imagem = ler_pgm("entrada.pgm", &largura, &altura);
 
-    // incio da medição de tempo
-    clock_t start = clock(); 
+    // Início da medição com a biblioteca padrão <time.h>
+    clock_t start = clock();
 
     double **resultado = suavizador_gaussiano(largura, altura, imagem);
 
     clock_t end = clock();
-    // fim da medição de tempo=
 
-    // Cálculo do tempo em segundos (double)
     double tempo_segundos = (double)(end - start) / CLOCKS_PER_SEC;
 
     salvar_pgm("saida.pgm", largura, altura, resultado);
 
-    printf("\nTempo de execucao (Serial): %f segundos\n", tempo_segundos);
+    printf("\nTempo de execucao (Serial ): %f segundos\n", tempo_segundos);
 
-    // Limpeza da memória alocada para o resultado
-    for (int i = 0; i < altura; i++) {
-        free(resultado[i]);
-    }
-    free(resultado);
+    liberar_matriz(imagem);
+    liberar_matriz(resultado);
 
     return 0;
 }
