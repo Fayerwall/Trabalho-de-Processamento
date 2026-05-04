@@ -27,7 +27,7 @@ void liberar_matriz(double **matriz) {
     }
 }
 
-/*faz a montagem do kernel a ser utilizado*/
+//faz a montagem do kernel a ser utilizado
 void monta_kernel(double kernel[TAMANHO][TAMANHO]){
     int i, j;
     int ax[TAMANHO], xx[TAMANHO][TAMANHO], yy[TAMANHO][TAMANHO];
@@ -59,7 +59,7 @@ void monta_kernel(double kernel[TAMANHO][TAMANHO]){
     }
 }
 
-/*faz o processo do aumento da borda da imagem original*/
+//faz o processo do aumento da borda da imagem original
 double** padding(int largura, int altura, double **imagem){
     int p = TAMANHO / 2;
     int n_largura = largura + 2 * p;
@@ -83,7 +83,7 @@ double** padding(int largura, int altura, double **imagem){
     return imagem_preenchida;
 }
 
-/*realiza a operação de convolução e alteração do pixel da imagem*/
+//realiza a operação de convolução e alteração do pixel da imagem
 double** convolucao(int largura, int altura, double **imagem_preenchida, double kernel[TAMANHO][TAMANHO], double **saida){
     for (int i = 0; i < altura; i++) {
         for (int j = 0; j < largura; j++) {
